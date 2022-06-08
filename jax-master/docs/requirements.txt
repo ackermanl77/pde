@@ -1,0 +1,15 @@
+sphinx>=2.1
+sphinx_rtd_theme
+jaxlib
+ipykernel
+nbsphinx
+sphinx-autodoc-typehints
+myst-parser[sphinx]
+# The next packages are for notebooks
+matplotlib
+sklearn
+# For CI tests.
+pytest
+pytest-xdist
+# Must install jax itself for notebook execution to work
+.
