@@ -1,0 +1,588 @@
+
+```{r setup, include=FALSE}
+library(deSolve)
+library(dplyr)
+library(ggplot2)
+library(rstan)
+library(bayesplot)
+library(posterior)
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores())
+##############
+
+# To simulate the data, we need to assign initial conditions.
+# In practice, these will likely be unknown, but can be estimated from the data.
+
+
+alpha = 0.5;
+gamma = 0.3;
+mu_s  = 0.013888889;
+mu_r  = 0.013888889;
+mu_p  = 0.012;
+sigma_p  = 12.;
+#K     = 10.146;
+
+NumIter = 4500
+burnin  = 500
+# We will use the package deSolve to integrate, which requires certain data structures.
+# Store parameters and initial values
+# Parameters must be stored in a named list.
+
+#params = c("beta_r", "beta_s",  "delta", "Karga","s0","i0") 
+#parameters = c("params[1]", "params[2]",  "params[3]", "params[4]","s0","i0") 
+parameters = c("params","y_init") 
+
+# Initial conditions are stored in a vector
+#inits <- c(S0, I0, R0)
+
+Data = read.csv('F2C_LB_few.csv')
+
+
+
+
+dataS =Data$suceptible
+dataI =Data$infectado
+timesData  =Data$hora
+
+data_S =dataS[2:length(dataS)]
+data_I =dataI[2:length(dataI)]
+times <- timesData[2:length(timesData)]
+
+
+#initial conditions
+S0 =  data_S[1]# initial fraction susceptible
+I0 =  data_I[1]# resistent
+R0 =  1.   # initial fraction
+
+sample_y <- cbind(data_S, data_I); # hare, lynx order
+  
+
+
+# Create a time series over which to integrate.
+# Here we have an epidemic that is observed over t_max number of days (or weeks or etc).
+t_min = 0.
+t_max = 10.0
+#times = t_min:t_max
+#ts <- 1:sample_days
+
+#inits <- c(S0, I0 ,R0 )
+#inits2D <- c(data_S[1], data_I[1] )
+n_obs = length(times)
+
+
+```
+
+
+```{r}
+# quick plot of the epidemic
+#plot(NA,NA, xlim = c(t_min, t_max), ylim=c(0, 1), xlab = "Time", ylab="Fraction of Host Population")
+plot(times,data_S,col="black",ylim=c(0,54))
+points(times,data_I,col="red")
+legend(x = 30, y = 0.8, legend = c("Susceptible", "Infected"), 
+       col = c("black", "red"), lty = c(1, 1), bty="n")
+
+```
+
+
+```{r echo=FALSE, fig.margin = TRUE, fig.cap="Plot of the number of lynx and hare pelts (in thousands) collected by the Hudson's Bay Company between 1900 and 1920."}
+# The Stan model statement:
+
+
+set.seed(1234)
+# Set initial values:
+ini = function(){
+  list(theta=c( runif(1,0,1)  , runif(1,0,1) , runif(1,0,1),
+                runif(1,0,100), runif(1,0,1) , runif(1,0,1)) )  
+}
+
+# FITTING
+
+# For stan model we need the following variables:
+
+stan_d = list(n_obs     = length(times),
+              n_params  = length(parameters),
+              n_difeq   = 3,
+              n_sample  = length(times),
+              n_fake    = length(times),
+              y         = sample_y,
+              t0        = 0.0,
+              ts        = times,
+              fake_ts   = times)
+
+# Which parameters to monitor in the model:
+params_monitor = c( "params","y_init","fake")
+
+# Test / debug the model:
+  test = stan("SI_fit_F2C.stan",
+            data   = stan_d,
+            pars   = params_monitor,
+            init   = ini,
+#            control = list(adapt_delta = 0.9),
+            chains = 2, iter = 10)
+
+# Fit and sample from the posterior
+mod = stan(fit    = test,
+           data   = stan_d,
+           pars   = params_monitor,
+           chains = 4,
+           control = list(adapt_delta = 0.9),
+           warmup = burnin,
+           iter   = NumIter
+           )
+ 
+# You should do some MCMC diagnostics, including:
+#traceplot(mod, pars="lp__")
+#traceplot(mod, pars=c("params", "y0"))
+#summary(mod)$summary[,"Rhat"]
+
+# These all check out for my model, so I'll move on.
+
+# Extract the posterior samples to a structured list:
+posts <- extract(mod)
+```
+```{r echo=FALSE, fig.margin = TRUE, fig.cap="Plot of the number of lynx and hare pelts (in thousands) collected by the Hudson's Bay Company between 1900 and 1920."}
+apply(posts$params, 2, median)
+#apply(posts$s0, 2, median)
+apply(posts$y_init, 2, median)[1:2]
+```
+
+
+```{r}
+#You should do some MCMC diagnostics, including:
+traceplot(mod, pars="lp__")
+traceplot(mod, pars=c( "params","y_init","fake"))
+nuts_fit_summary <- summary(mod)$summary
+print(nuts_fit_summary,scientific=FALSE,digits=4)
+```
+
+```{r diagnostics1, echo=FALSE}
+
+#mod1_diagnostics <-rstan::get_sampler_params(nuts_fit_1)
+
+# Check for divergent transitions
+#rstan::check_divergences(nuts_fit_1)
+
+
+color_scheme_set("viridis")
+# Markov chain traceplots     
+posterior <- as.array(mod)
+mcmc_trace(posterior, pars="lp__")
+#mcmc_trace(posterior, pars=c("params","y_init","fake"))
+mcmc_trace(posterior, pars=c("params[1]", "params[2]",  "params[3]", "params[4]","y_init[1]","y_init[2]"))
+
+
+# Univariate and bivariate marginal posterior distributions
+pairs(mod, pars = c("params","y_init"), 
+      labels    = c("beta_r", "beta_s",  "delta", "Karga","s0","i0"), 
+      cex.labels=1.5, font.labels=9, condition = "accept_stat__")  
+
+# Kernel density estimates of each Markov chain separately, overlaid
+mcmc_dens_overlay(posterior, pars= c("params[1]", "params[2]",  "params[3]", "params[4]","y_init[1]","y_init[2]") )
+
+#Central posterior uncertainty intervals
+mcmc_intervals(posterior,pars = c("params[1]", "params[2]",  "params[3]", "params[4]","y_init[1]","y_init[2]"))
+```
+
+
+
+```{r}
+# These should match well. 
+
+#################
+# Plot model fit:
+
+posterior <- as.array(mod)
+
+# Model predictions across the sampling time period.
+# These were generated with the "fake" data and time series.
+mod_median = apply(posts$fake[,,2], 2, median)
+mod_low = apply(posts$fake[,,2], 2, quantile, probs=c(0.025))
+mod_high = apply(posts$fake[,,2], 2, quantile, probs=c(0.975))
+
+
+# Combine into two data frames for plotting
+df_sample = data.frame(sample_y, times)
+df_fit = data.frame(mod_median, mod_low, mod_high, times)
+
+# Plot the synthetic data with the model predictions
+# Median and 95% Credible Interval
+
+ggplot(df_sample, aes(x=times, y=df_sample$data_I )) +
+  geom_point(col="black", shape = 19, size = 1.5) +
+  # Error in integration:
+  geom_line(data = df_fit, aes(x=times, y=mod_median), color = "red") + 
+  geom_line(data = df_fit, aes(x=times, y=mod_high), color = "red", linetype=3) + 
+  geom_line(data = df_fit, aes(x=times, y=mod_low), color = "red", linetype=3) + 
+  # Aesthetics
+  labs(x = "Time (days)", y = "Proportion Infected") + 
+  scale_x_continuous(limits=c(0, 7), breaks=c(0,25,50)) +
+  scale_y_continuous(limits=c(0,40), breaks=c(0,.5,1)) +
+  theme_classic() + 
+  theme(axis.line.x = element_line(color="black"),
+        axis.line.y = element_line(color="black"))  
+```
+
+
+```{r}
+#################
+# Plot model fit:
+
+
+# Model predictions across the sampling time period.
+# These were generated with the "fake" data and time series.
+mod_median = apply(posts$fake[,,1], 2, median)
+mod_low = apply(posts$fake[,,1], 2, quantile, probs=c(0.025))
+mod_high = apply(posts$fake[,,1], 2, quantile, probs=c(0.975))
+mod_time = stan_d$fake_ts
+
+# Combine into two data frames for plotting
+df_fit = data.frame(mod_median, mod_low, mod_high, mod_time)
+
+# Plot the synthetic data with the model predictions
+# Median and 95% Credible Interval
+
+ggplot(df_sample, aes(x=times, y=df_sample$data_S )) +
+  geom_point(col="black", shape = 19, size = 1.5) +
+  # Error in integration:
+  geom_line(data = df_fit, aes(x=mod_time, y=mod_median), color = "red") + 
+  geom_line(data = df_fit, aes(x=mod_time, y=mod_high), color = "red", linetype=3) + 
+  geom_line(data = df_fit, aes(x=mod_time, y=mod_low), color = "red", linetype=3) + 
+  # Aesthetics
+  labs(x = "Time (days)", y = "Proportion Infected") + 
+  scale_x_continuous(limits=c(0, 7.0), breaks=c(0,25,50)) +
+  scale_y_continuous(limits=c(0,60), breaks=c(0,.5,1)) +
+  theme_classic() + 
+  theme(axis.line.x = element_line(color="black"),
+        axis.line.y = element_line(color="black"))  
+```
+
+
+```{r plot_nuts_fit1, echo=FALSE}
+# Model fitted values across the observed time period
+fit_I <- posts$fake[,,2]    # Fitted fraction of infected 
+median_I = apply(fit_I, 2, median)
+low_I = apply(fit_I, 2, quantile, probs=c(0.025))
+high_I = apply(fit_I, 2, quantile, probs=c(0.975))
+
+# Combine into two data frames for plotting
+#df_sample = data.frame(sample_y, times)
+df_fit_I = data.frame(median_I, low_I, high_I, times)
+
+save(df_sample,file="dataBact.Rda")
+save(df_fit_I,file="df_fit_I_Bact.Rda")
+
+pdf("rplot.pdf")
+ggplot(df_sample, aes(x=times, y=df_sample$data_I)) +
+  geom_ribbon(aes(x=times, ymin = low_I, ymax = high_I), fill = "orange", alpha = 0.6) +
+  geom_line(data = df_fit_I, aes(x=times, y=median_I, color = "Median"), size = 1.3) +
+  geom_point(shape = 19, size = 3, (aes(color="Data"))) +
+  scale_colour_manual(name='', values=c('Data'='black', 'Median'='darkorange3'))+
+  guides(colour = guide_legend(override.aes = list(shape=c(16,NA),  linetype=c(0,1))))+
+  labs(x = "Time (hrs)", y = "Infected ") + 
+  scale_x_continuous(limits=c(0, 7.)) +
+  scale_y_continuous(limits=c(0,40)) +
+  theme_bw()+ theme(text = element_text(size=20))
+dev.off()
+```
+
+
+
+```{r plot_nuts_fit1, echo=FALSE}
+# Model fitted values across the observed time period
+fit_S <- posts$fake[,,1]    # Fitted fraction of infected 
+median_S = apply(fit_S, 2, median)
+low_S = apply(fit_S, 2, quantile, probs=c(0.025))
+high_S = apply(fit_S, 2, quantile, probs=c(0.975))
+
+# Combine into two data frames for plotting
+#df_sample = data.frame(sample_y, times)
+df_fit_S = data.frame(median_S, low_S, high_S, times)
+
+#save(df_sample,file="dataBact.Rda")
+save(df_fit_S,file="df_fit_S_Bact.Rda")
+
+ggplot(df_sample, aes(x=times, y=df_sample$data_S)) +
+  geom_ribbon(aes(x=times, ymin = low_S, ymax = high_S), fill = "orange", alpha = 0.6) +
+  geom_line(data = df_fit_S, aes(x=times, y=median_S, color = "Median"), size = 1.3) +
+  geom_point(shape = 19, size = 3, (aes(color="Data"))) +
+  scale_colour_manual(name='', values=c('Data'='black', 'Median'='darkorange3'))+
+  guides(colour = guide_legend(override.aes = list(shape=c(16,NA),  linetype=c(0,1))))+
+  labs(x = "Time (hrs)", y = "Infected ") + 
+  scale_x_continuous(limits=c(0, 7.)) +
+  scale_y_continuous(limits=c(0,60.)) +
+  theme_bw()+ theme(text = element_text(size=20))
+```
+
+```{r stan_model1, echo=TRUE}
+mod1_stat <- '
+functions {
+ real[] SIP(real t,       // time
+               real[] y,     // system state {prey, predator}
+               real[] params, // parameters
+               real[] x_r,   // unused data
+               int[] x_i) {
+                 
+    real dy_dt[3];
+    
+    real beta_r = params[1];
+    real beta_s = params[2];
+    real delta  = params[3];
+    real Karga  = params[4];
+    
+    
+    real alpha = 0.5;
+    real gamma = 0.3;
+    real mu_s  = 0.013888889;
+    real mu_r  = 0.013888889;
+    real mu_p  = 0.012;
+    real sigma_p  = 1.2;
+//    real K     = 10.146;
+    
+    dy_dt[1] = beta_r*y[1]*(1- (y[1] + y[2] )/Karga) - alpha*y[1] - delta*y[3]*y[1] - (gamma + mu_s)*y[1];
+    dy_dt[2] = beta_s*y[2]*(1- (y[1] + y[2] )/Karga)  +  delta*y[3]*y[1] - (gamma + mu_r)*y[2];
+    dy_dt[3] = sigma_p*y[2] - mu_p*y[3];
+    
+  
+    
+    return dy_dt;
+  }
+}
+
+data {
+  int<lower = 1> n_obs; // Number of days sampled
+  int<lower = 1> n_params; // Number of model parameters
+  int<lower = 1> n_difeq; // Number of differential equations in the system
+  int<lower = 1> n_sample; // Number of hosts sampled at each time point.
+  int<lower = 1> n_fake; // This is to generate "predicted"/"unsampled" data
+  
+
+  real y[n_obs, 2]; // The binomially distributed data
+  real t0; // Initial time point (zero)
+  real ts[n_obs]; // Time points that were sampled
+  
+  real fake_ts[n_fake]; // Time points for "predicted"/"unsampled" data
+  
+  
+}
+
+transformed data {
+  real x_r[0];
+  int x_i[0];
+}
+
+parameters {
+
+  //Support of parameters
+  real<lower =  0, upper = 5> beta_r ;
+  real<lower =  0, upper = 4> beta_s ;
+  real<lower =  0, upper =0.1> delta; 
+  real<lower =  1, upper =1e2> Karga;
+  real<lower =  0, upper = 1.> s0 ;
+  real<lower =  0, upper = 1.> i0; 
+  
+  //Standard deviation of likelihood distribution
+  real<lower = 0> sigma[2];   // measurement errors
+  
+}
+
+transformed parameters {
+
+  real params[4];   // { alpha, beta, gamma, delta }
+  real y_hat[n_obs, n_difeq]; // Output from the ODE solver
+//  real y_hat_init[n_difeq];     // initial conditions for both fractions of S and I
+  real y_init[n_difeq];     // initial conditions for both fractions of S and I
+
+  y_init[1] = s0;
+  y_init[2] = i0;
+  y_init[3] = 1.;
+  
+  params[1] = beta_r;
+  params[2] = beta_s;
+  params[3] = delta;
+  params[4] = Karga;
+  
+  y_hat = integrate_ode_rk45(SIP, y_init, t0, ts, params, x_r, x_i);
+}
+
+
+
+model {
+  
+  // Prior distributions
+
+  beta_r ~ gamma(2.5, 1.0); 
+  beta_s ~ gamma(2.5, 1.0); 
+  delta ~ gamma(3.0, 1.0); 
+  Karga ~ uniform(1.0, 1.0e4);
+  s0    ~ uniform(0.0, 1.0  );
+  i0    ~ uniform(0.0, 1.0  );
+  sigma ~ normal(0, 1);
+  
+  for (k in 1:2) {
+
+     y[ , k] ~ lognormal(log(y_hat[, k]), sigma[k]);
+  }
+
+
+}
+
+generated quantities {
+
+
+  // Generate predicted data over the whole time series:
+  real fake[n_fake, n_difeq];
+ 
+  fake = integrate_ode_rk45(SIP, y_init, t0, fake_ts, params, x_r, x_i);
+
+  
+}
+'
+m1 <- stan_model(model_code = mod1_stat)
+```
+
+  Approximate the posterior using ADVI(mean-field):
+
+```{r ADVI_1, dependson=c(load_flu_data), echo=FALSE}
+set.seed(1234)
+
+# Number of iterations
+NumIter_vb = 100000
+# Set initial values:
+parameters = c("params","y_init","fake") 
+#parameters = c("params[1]", "params[2]",  "params[3]", "params[4]","y_init[1]","y_init[2]","fake")
+
+# Which parameters to monitor in the model:
+#params_monitor = c( "params","fake")
+#pars=c("params[1]", "params[2]","params[3]", "params[4]")
+
+ini_vb_1 = function(){
+  list(theta=c( runif(1,0,1)  , runif(1,0,1) , runif(1,0,1),
+                runif(1,0,100), runif(1,0,1) , runif(1,0,1)) )  
+}
+
+#mod1_stat='SI_fit_F2B.stan'
+#m1 = stan_model(model_code = mod1_stat)
+
+
+
+time.start_vb_1 <- Sys.time()
+vb_fit_1=vb(m1, data = stan_d, pars = parameters, init = ini_vb_1, iter = NumIter_vb, tol_rel_obj = 0.001, seed=16735679)
+time.end_vb_1 <- Sys.time()
+vb_duration_1 <- time.end_vb_1 - time.start_vb_1
+
+#traceplot(mod, pars="lp__")
+#traceplot(mod, pars=c( "params","fake"))
+#nuts_fit_summary <- summary(mod)$summary
+#print(nuts_fit_summary,scientific=FALSE,digits=4)
+
+vb_fit_1_summary <- summary(vb_fit_1, pars = c("lp__", "params[1]", "params[2]",  "params[3]", "params[4]","y_init[1]","y_init[2]"))$summary
+print(vb_fit_1_summary,scientific=FALSE,digits=4)
+posts_vb_1 <-  rstan::extract(vb_fit_1)
+```
+```{r}
+#You should do some MCMC diagnostics, including:
+#params = c("beta_r", "beta_s",  "delta", "Karga") 
+traceplot(vb_fit_1, pars="lp__")
+#traceplot(vb_fit_1, pars=c( "params","fake"))
+traceplot(vb_fit_1, pars=c( "params[1]", "params[2]",  "params[3]", "params[4]","y_init[1]","y_init[2]"))
+nuts_fit_summary <- summary(vb_fit_1)$summary
+print(nuts_fit_summary,scientific=FALSE,digits=4)
+```
+
+```{r diagnostics1, echo=FALSE}
+
+#mod1_diagnostics <-rstan::get_sampler_params(nuts_fit_1)
+
+# Check for divergent transitions
+#rstan::check_divergences(nuts_fit_1)
+parameters = c("params[1]", "params[2]",  "params[3]", "params[4]","y_init[1]","y_init[2]")
+
+color_scheme_set("viridis")
+# Markov chain traceplots     
+posterior <- as.array(vb_fit_1)
+mcmc_trace(posterior, pars="lp__")
+mcmc_trace(posterior, pars=parameters)
+#mcmc_trace(posterior, pars=c("params[1]", "params[2]",  "params[3]", "params[4]","y_init[1]","y_init[2]"))
+
+
+# Univariate and bivariate marginal posterior distributions
+#pairs(vb_fit_1, pars = c("params[1]", "params[2]",  "params[3]", #"params[4]","y_init[1]","y_init[2]"), 
+#      labels    = c("beta_r", "beta_s",  "delta", "Karga","s0","i0"), 
+#      cex.labels=1.5, font.labels=9, condition = "accept_stat__")  
+
+# Kernel density estimates of each Markov chain separately, overlaid
+#mcmc_dens_overlay(posterior, pars= c("params[1]", "params[2]",  "params[3]", "params[4]","y_init[1]","y_init[2]") )
+#mcmc_hist(vb_fit_1$draws("beta_r", "beta_s",  "delta", "Karga","s0","i0"))
+#Central posterior uncertainty intervals
+mcmc_intervals(posterior,pars = c("params[1]", "params[2]",  "params[3]", "params[4]","y_init[1]","y_init[2]"))
+#mcmc_intervals(posterior,pars = parameters)
+```
+
+
+
+
+```{r}
+# Combine into two data frames for plotting
+# These should match well. 
+# These were generated with the "fake" data and time series.
+mod_median = apply(posts_vb_1$fake[,,2], 2, median)
+mod_low = apply(posts_vb_1$fake[,,2], 2, quantile, probs=c(0.025))
+mod_high = apply(posts_vb_1$fake[,,2], 2, quantile, probs=c(0.975))
+
+df_sample = data.frame(sample_y, times)
+df_fit = data.frame(mod_median, mod_low, mod_high, times)
+
+# Plot the synthetic data with the model predictions
+# Median and 95% Credible Interval
+
+ggplot(df_sample, aes(x=times, y=df_sample$data_I )) +
+  geom_point(col="black", shape = 19, size = 1.5) +
+  # Error in integration:
+  geom_line(data = df_fit, aes(x=times, y=mod_median), color = "red") + 
+  geom_line(data = df_fit, aes(x=times, y=mod_high), color = "red", linetype=3) + 
+  geom_line(data = df_fit, aes(x=times, y=mod_low), color = "red", linetype=3) + 
+  # Aesthetics
+  labs(x = "Time (days)", y = "Proportion Infected") + 
+  scale_x_continuous(limits=c(0, 7), breaks=c(0,25,50)) +
+  scale_y_continuous(limits=c(0,50), breaks=c(0,.5,1)) +
+  theme_classic() + 
+  theme(axis.line.x = element_line(color="black"),
+        axis.line.y = element_line(color="black")) 
+```
+
+
+```{r}
+# These should match well. 
+# These were generated with the "fake" data and time series.
+mod_median = apply(posts_vb_1$fake[,,1], 2, median)
+mod_low    = apply(posts_vb_1$fake[,,1], 2, quantile, probs=c(0.025))
+mod_high   = apply(posts_vb_1$fake[,,1], 2, quantile, probs=c(0.975))
+
+# Combine into two data frames for plotting
+df_sample = data.frame(sample_y, times)
+df_fit = data.frame(mod_median, mod_low, mod_high, times)
+
+# Plot the synthetic data with the model predictions
+# Median and 95% Credible Interval
+
+ggplot(df_sample, aes(x=times, y=df_sample$data_S )) +
+  geom_point(col="black", shape = 19, size = 1.5) +
+  # Error in integration:
+  geom_line(data = df_fit, aes(x=times, y=mod_median), color = "red") + 
+  geom_line(data = df_fit, aes(x=times, y=mod_high), color = "red", linetype=3) + 
+  geom_line(data = df_fit, aes(x=times, y=mod_low), color = "red", linetype=3) + 
+  # Aesthetics
+  labs(x = "Time (days)", y = "Proportion Infected") + 
+  scale_x_continuous(limits=c(0, 7), breaks=c(0,25,50)) +
+  scale_y_continuous(limits=c(0,60), breaks=c(0,.5,1)) +
+  theme_classic() + 
+  theme(axis.line.x = element_line(color="black"),
+        axis.line.y = element_line(color="black")) 
+```
+
+
+```{r}
+# These should match well. 
+# These were generated with the "fake" data and time series.
+mod_median = apply(posts$fake_I[,,1], 2, median)
+```

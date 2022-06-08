@@ -1,0 +1,96 @@
+Esta matriz se obtuvo del conjunto de datos tviaje de la encuesta OD 2017
+- Se consideran todos los modos de transporte
+- El modo caminata se considera incluso si no todo el viaje se hizo caminando
+- Viajes de lunes a viernes (p_5_3 = 1)
+- Para la CDMX y EdoMex (p5_7_7 (origen) = p_5_12_7 (destino) = 9 y 15)
+- Para todas las delegaciones (p5_7_6 y p5_12_6 entre 2 y 17)
+- Para algunos municipios del EDOMEX
+- Cualquier horario
+- Cualquier propósito p5_13
+- Los viajes se registran en p5_15_01, p5_15_02, ..., p5_15_20
+- La suma de viajes se debe multiplicar por el factor y cada modo 
+  de viaje por el índice de movilidad
+  ** La fase 1 se considera del 27 de febrero al 23 de marzo
+	Reducción promedio por modo (Gobierno de la CDMX)
+	Metro:       - 8.44
+	Metrobús:    -10.99
+	Tren ligero: - 7.20
+	Trolebús:    - 6.96
+	RTP:	     -46.87
+	Ecobici:     -16.31
+	Mexibús:     - 8.50
+	Mexicable:   - 5.51
+	T. suburbano:-16.71
+
+	Estaciones de transito (Google)
+	CDMX:   -8.89
+	EdoMex: -5.83
+	Estacionamientos (Google)
+	CDMX:   -6.67
+	EdoMex: -1.83
+
+  ** La fase 2 se considera del 24 de marzo al 20 de abril
+	Reducción promedio por modo (Gobierno de la CDMX)
+	Metro:       -60.31
+	Metrobús:    -66.25
+	Tren ligero: -65.37
+	Trolebús:    -57.76
+	RTP:	     -51.27
+	Ecobici:     -76.95
+	Mexibús:     -53.96
+	Mexicable:   -35.14
+	T. suburbano:-69.46
+	
+	Estaciones de transito (Google)
+	CDMX:   -58.10
+	EdoMex: -49.75
+	Estacionamientos (Google)
+	CDMX:   -51.30
+	EdoMex: -29.20
+
+- Pensando que los municipios que se consideran del EDOMEX tienen 
+  comportamiento similar a la CDMX, se consideran sólo los índices 
+  de la CDMX.
+
+La primera columna y el primer renglón de esta matriz indican la clave de
+la delegación de acuerdo con la siguiente tabla
+
+Clave	Estado			Delegación/Municipio
+900002	Ciudad de México	AZCAPOTZALCO
+900003	Ciudad de México	COYOACAN
+900004	Ciudad de México	CUAJIMALPA DE MORELOS
+900005	Ciudad de México	GUSTAVO A. MADERO
+900006	Ciudad de México	IZTACALCO
+900007	Ciudad de México	IZTAPALAPA
+900008	Ciudad de México	LA MAGDALENA CONTRERAS
+900009	Ciudad de México	MILPA ALTA
+900010	Ciudad de México	ALVARO OBREGON
+900011	Ciudad de México	TLAHUAC
+900012	Ciudad de México	TLALPAN
+900013	Ciudad de México	XOCHIMILCO
+900014	Ciudad de México	BENITO JUAREZ
+900015	Ciudad de México	CUAUHTEMOC
+900016	Ciudad de México	MIGUEL HIDALGO
+900017	Ciudad de México	VENUSTIANO CARRANZA
+150020	Estado de México	COACALCO DE BERRIOZABAL
+150024	Estado de México	CUAUTITLAN
+150025	Estado de México	CHALCO
+150029	Estado de México	CHICOLOAPAN
+150031	Estado de México	CHIMALHUACAN
+150033	Estado de México	ECATEPEC DE MORELOS
+150037	Estado de México	HUIXQUILUCAN
+150039	Estado de México	IXTAPALUCA
+150057	Estado de México	NAUCALPAN DE JUAREZ
+150058	Estado de México	NEZAHUALCOYOTL
+150060	Estado de México	NICOLAS ROMERO
+150070	Estado de México	LA PAZ
+150081	Estado de México	TECAMAC
+150099	Estado de México	TEXCOCO
+150104	Estado de México	TLALNEPANTLA DE BAZ
+150109	Estado de México	TULTITLAN
+150121	Estado de México	CUAUTITLAN IZCALLI
+150122	Estado de México	VALLE DE CHALCO SOLIDARIDAD
+
+
+Así, el número de viajes que se originan en la zona 900005 (Gustavo A. MAdero)
+y terminan en la zona 900007 (Iztapalapa) durante la fase 1 es 61483.
